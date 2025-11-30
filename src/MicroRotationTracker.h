@@ -67,7 +67,7 @@ private:
     // Once using the magnetometer you should always calibrate for best results
     // I recommend free software like MagCal or Magneto 1.2
     float MAG_HARD_IRON_CORRECTION[3] = {0.0f, 0.0f, 0.0f};   // x, y, z offsets
-    float MAG_SOFT_IRON_CORRECTION[3][3] = {
+    float MAG_SOFT_IRON_CORRECTION[3][3] = {                  // Identity matrix by default
         {1.0f, 0.0f, 0.0f},
         {0.0f, 1.0f, 0.0f},
         {0.0f, 0.0f, 1.0f}

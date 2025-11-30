@@ -6,6 +6,7 @@ MicroRotationTracker::MicroRotationTracker() {
 }
 
 void MicroRotationTracker::init(float frequency) {
+    // Always initialize before use
     FREQUENCY = frequency;
     filter.begin(FREQUENCY);
     lastUpdateTime = 0;
@@ -108,7 +109,7 @@ void MicroRotationTracker::applyMagCalibration(float& mx, float& my, float& mz) 
     my -= MAG_HARD_IRON_CORRECTION[1];
     mz -= MAG_HARD_IRON_CORRECTION[2];
 
-    // Soft iron correction
+    // Soft iron correction through Matrix multiplication
     float calibratedMx = MAG_SOFT_IRON_CORRECTION[0][0] * mx +
                          MAG_SOFT_IRON_CORRECTION[0][1] * my +
                          MAG_SOFT_IRON_CORRECTION[0][2] * mz;
@@ -143,6 +144,13 @@ EulerAngles MicroRotationTracker::getEulerAngles(){
 // ======== SMOOTHING ========
 // ===========================
 Quaternion MicroRotationTracker::smoothQuaternion(Quaternion _quat, float beta, float deadzone) {
+    /**
+    * @brief Smooth the quaternion using NLERP and optional deadzone
+    * @param _quat Quaternion to be smoothed
+    * @param beta Smoothing factor (0.0 - 1.0), higher is smoother
+    * @param deadzone Ignore changes smaller than this threshold
+    * @return Smoothed Quaternion
+    */
     if(deadzone > 0.0f) {
         // DEADZONE calculation
         // Calculate difference between new and previous quaternion
@@ -205,6 +213,11 @@ Quaternion MicroRotationTracker::nlerp(const Quaternion& newQ, const Quaternion&
 }
 
 EulerAngles MicroRotationTracker::quaternionToEuler(const Quaternion& q) {
+    /**
+     * @brief Convert Quaternion to Euler Angles (roll, pitch, yaw)
+     * @param q Input Quaternion
+     * @return EulerAngles struct with roll, pitch, yaw in degrees
+     */
     EulerAngles angles;
     // Roll (x-axis rotation)
     angles.roll = atan2f(2.0f * (q.q0 * q.q1 + q.q2 * q.q3),
