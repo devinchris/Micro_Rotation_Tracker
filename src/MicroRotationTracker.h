@@ -1,7 +1,7 @@
 #ifndef MICRO_ROTATION_TRACKER_H
 #define MICRO_ROTATION_TRACKER_H
 
-#include <MadgwickAHRS.h>
+#include "libs/MadgwickAHRS.h"
 
 // Data structs for output data
 typedef struct {
@@ -25,7 +25,7 @@ public:
     // Initialize filter at the start
     void init(float frequency = 100.0f);
 
-    void initSmoothing(float beta=0.7f, float deadzone=0.0f);
+    Quaternion smoothQuaternion(Quaternion _quat, float beta=0.7f, float deadzone=0.0f);
 
     // ==== CALIBRATION ==== //
     // Calibration routine for IMU sensors
@@ -49,6 +49,11 @@ public:
     // Secondary getter for Euler Angles
     // Beware of gimbal lock when using Euler angles
     EulerAngles getEulerAngles();
+
+    // Calculate Euler Angles via Quaternion
+    // use this if you want to smooth Euler angles directly
+    // Gimbal lock may still occur
+    EulerAngles quaternionToEuler(const Quaternion& q);
 
 private:
     // Filter variables
@@ -80,8 +85,15 @@ private:
     float BETA_HIGH = 0.1f;
     float BETA_MAX = 0.4f;
 
+    Quaternion previousQuat = {1.0f, 0.0f, 0.0f, 0.0f}; // Identity quaternion
+    Quaternion nlerp(const Quaternion& newQ, const Quaternion& prevQ, float alpha);
+
+    static constexpr float QUATERNION_TO_DEG = 57.29578f; // 180 / PI
+
     void applyMagCalibration(float& mx, float& my, float& mz);
 
     Quaternion _quat;
     EulerAngles _euler;
 };
+
+#endif // MICRO_ROTATION_TRACKER_H

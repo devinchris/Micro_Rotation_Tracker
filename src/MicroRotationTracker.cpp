@@ -1,5 +1,5 @@
-#include <MadgwickAHRS.h>
 #include "MicroRotationTracker.h"
+#include "libs/MadgwickAHRS.h"
 
 MicroRotationTracker::MicroRotationTracker() {
     // Constructor
@@ -14,6 +14,15 @@ void MicroRotationTracker::init(float frequency) {
 // === SET CALIBRATION ====
 void MicroRotationTracker::setIMUCalibration(float gyroBiasX, float gyroBiasY, float gyroBiasZ,
                                              float accelBiasX, float accelBiasY, float accelBiasZ) {
+    /**
+     * @brief Set IMU calibration offsets
+     * @param gyroBiasX Gyroscope bias in X axis (deg/s)
+     * @param gyroBiasY Gyroscope bias in Y axis (deg/s)
+     * @param gyroBiasZ Gyroscope bias in Z axis (deg/s)
+     * @param accelBiasX Accelerometer bias in X axis (g)
+     * @param accelBiasY Accelerometer bias in Y axis (g)
+     * @param accelBiasZ Accelerometer bias in Z axis (g)
+     */
     gyroBias[0] = gyroBiasX;
     gyroBias[1] = gyroBiasY;
     gyroBias[2] = gyroBiasZ;
@@ -33,6 +42,10 @@ void MicroRotationTracker::setMagnetometerCorrection(const float hardIron[3], co
 }
 
 void MicroRotationTracker::setFilterGain(bool _useAdaptivegain, float betaNormal, float betaHigh, float betaMax) {
+    if(betaNormal <= 0.0f || betaHigh <= 0.0f || betaMax <= 0.0f) {
+        // Invalid gain values, ignore
+        return;
+    }
     useAdaptiveGain = _useAdaptivegain;
     if(_useAdaptivegain){
         BETA_NORMAL = betaNormal;
@@ -60,9 +73,11 @@ void MicroRotationTracker::calculateRotation(float gx, float gy, float gz,
     }
 
     if(useMag) {
+        previousQuat = _quat; // Store previous quaternion for smoothing
         applyMagCalibration(mx, my, mz);
         filter.update(gx, gy, gz, ax, ay, az, mx, my, mz);
     } else {
+        previousQuat = _quat; // Store previous quaternion for smoothing
         filter.updateIMU(gx, gy, gz, ax, ay, az);
     }
 
@@ -127,7 +142,83 @@ EulerAngles MicroRotationTracker::getEulerAngles(){
 // ===========================
 // ======== SMOOTHING ========
 // ===========================
-void MicroRotationTracker::initSmoothing(float beta, float deadzone) {
+Quaternion MicroRotationTracker::smoothQuaternion(Quaternion _quat, float beta, float deadzone) {
+    if(deadzone > 0.0f) {
+        // DEADZONE calculation
+        // Calculate difference between new and previous quaternion
+        float dq0 = _quat.q0 - previousQuat.q0;
+        float dq1 = _quat.q1 - previousQuat.q1;
+        float dq2 = _quat.q2 - previousQuat.q2;
+        float dq3 = _quat.q3 - previousQuat.q3;
+
+        // Calculate magnitude of difference
+        float diffMagnitude = sqrt(dq0 * dq0 + dq1 * dq1 + dq2 * dq2 + dq3 * dq3);
+
+        // If difference is within deadzone, return previous quaternion
+        if(diffMagnitude < deadzone) {
+            return previousQuat;
+        }
+    }
+
     // NLERP Smoothing Initialization
-    // TODO!
+    return nlerp(_quat, previousQuat, beta);
+}
+
+Quaternion MicroRotationTracker::nlerp(const Quaternion& newQ, const Quaternion& prevQ, float alpha) {
+    // Calculate NLERP between two quaternions
+    // 1. Calculate dot product
+    float dot = (newQ.q0 * prevQ.q0) + 
+                (newQ.q1 * prevQ.q1) + 
+                (newQ.q2 * prevQ.q2) + 
+                (newQ.q3 * prevQ.q3);
+
+    // 2. Get shortest path
+    float sign = 1.0f;
+    if (dot < 0.0f) {
+        sign = -1.0f;
+    }
+
+    // 3. Linear interpolation
+    // Formula: result = prevQ * (1 - alpha) + newQ * alpha * sign
+    Quaternion result;
+    float invAlpha = 1.0f - alpha;
+
+    result.q0 = (prevQ.q0 * invAlpha) + (newQ.q0 * alpha * sign);
+    result.q1 = (prevQ.q1 * invAlpha) + (newQ.q1 * alpha * sign);
+    result.q2 = (prevQ.q2 * invAlpha) + (newQ.q2 * alpha * sign);
+    result.q3 = (prevQ.q3 * invAlpha) + (newQ.q3 * alpha * sign);
+
+    // 4. Normalize the result quaternion
+    float lengthSq = result.q0*result.q0 + result.q1*result.q1 + 
+                     result.q2*result.q2 + result.q3*result.q3;
+
+    if (lengthSq > 1e-6f) { // Prevent division by zero
+        float invLength = 1.0f / sqrt(lengthSq);
+        
+        result.q0 *= invLength;
+        result.q1 *= invLength;
+        result.q2 *= invLength;
+        result.q3 *= invLength;
+    }
+
+    return result;
+}
+
+EulerAngles MicroRotationTracker::quaternionToEuler(const Quaternion& q) {
+    EulerAngles angles;
+    // Roll (x-axis rotation)
+    angles.roll = atan2f(2.0f * (q.q0 * q.q1 + q.q2 * q.q3),
+                         1.0f - 2.0f * (q.q1 * q.q1 + q.q2 * q.q2)) * QUATERNION_TO_DEG;
+
+    // Pitch (y-axis rotation)
+    float sinp = 2.0f * (q.q0 * q.q2 - q.q3 * q.q1);
+    if (fabs(sinp) >= 1)
+        angles.pitch = copysignf(90.0f, sinp); // use 90 degrees if out of range
+    else
+        angles.pitch = asinf(sinp) * QUATERNION_TO_DEG;
+
+    // Yaw (z-axis rotation)
+    angles.yaw = atan2f(2.0f * (q.q0 * q.q3 + q.q1 * q.q2),
+                        1.0f - 2.0f * (q.q2 * q.q2 + q.q3 * q.q3)) * QUATERNION_TO_DEG;
+    return angles;
 }
